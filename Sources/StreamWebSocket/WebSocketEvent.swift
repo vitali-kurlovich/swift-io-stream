@@ -4,7 +4,7 @@
 
 import Foundation
 
-public enum WebSocketEvent {
+public enum WebSocketEvent: Sendable {
     case onConnect(WebSocket, URLSessionWebSocketTask, String?)
     case onDisconnet(WebSocket, URLSessionWebSocketTask, URLSessionWebSocketTask.CloseCode, Data?)
 }
