@@ -26,6 +26,7 @@ let package = Package(
 
     dependencies: [
         .package(url: "https://github.com/apple/swift-log", from: "1.15.1"),
+        .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.1.0"),
     ],
     targets: [
         .target(
