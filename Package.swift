@@ -21,7 +21,7 @@ let package = Package(
     ],
     traits: [
         .trait(name: "WebsocketLogging", description: "Enables websocket logging features"),
-        //.default(enabledTraits: ["WebsocketLogging"]),
+        // .default(enabledTraits: ["WebsocketLogging"]),
     ],
 
     dependencies: [

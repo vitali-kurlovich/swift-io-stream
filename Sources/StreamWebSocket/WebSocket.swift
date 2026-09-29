@@ -7,6 +7,7 @@ import Network
 
 #if WebsocketLogging
     import Logging
+
     private let logger: Logger = .init(label: String(describing: WebSocket.self))
 #endif
 
