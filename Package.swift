@@ -17,16 +17,13 @@ let package = Package(
             targets: ["StreamWebSocket"]
         ),
     ],
-    dependencies: [
-        .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.1.0"),
-        .package(url: "https://github.com/apple/swift-log", from: "1.15.1"),
-    ],
+    dependencies: [],
     targets: [
         .target(
             name: "StreamWebSocket",
             dependencies: [
-                .product(name: "Logging", package: "swift-log"),
             ]
         ),
-    ]
+    ],
+    swiftLanguageModes: [.v6]
 )

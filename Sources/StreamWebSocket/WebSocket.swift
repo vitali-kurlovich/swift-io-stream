@@ -252,42 +252,23 @@ private extension WebSocket {
             }
         }
     }
-}
 
-private extension WebSocket {
-    var pingInterval: Duration {
-        configuration.pingInterval
-    }
+    func scheduleReconnect() {
+        reconnectTask?.cancel()
+        guard networkAvailable else {
+            // The path monitor will call open() when the network returns.
+            state = .reconnecting(attempt: attempt, delay: 0)
+            return
+        }
+        attempt += 1
+        let base = min(maxBackoff, pow(2, Double(attempt - 1)))
+        let delay = base * Double.random(in: 0.8 ... 1.2)
+        state = .reconnecting(attempt: attempt, delay: delay)
 
-    var flushInterval: Duration {
-        configuration.flushInterval
-    }
-
-    var maxBackoff: TimeInterval {
-        configuration.maxBackoff
-    }
-}
-
-private extension WebSocket {
-    func invalidateConfiguration() {
-        guard wantsConnection else { return }
-        disconnect()
-        connect()
-    }
-
-    func invalidateState() {
-        stateContinuation.yield(state)
-    }
-}
-
-private extension WebSocket {
-    func subscribeEventsIfNeeds() {
-        guard webSocketEventsTask == nil else { return }
-
-        webSocketEventsTask = Task { [weak self, webSocketDelegate] in
-            for await event in webSocketDelegate.events {
-                await self?.recieve(event: event)
-            }
+        reconnectTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            await self?.open()
         }
     }
 }
@@ -325,6 +306,71 @@ private extension WebSocket {
 }
 
 private extension WebSocket {
+    // MARK: - Error handlening
+
+    func handleFailure(_ task: URLSessionWebSocketTask,
+                       error: WebSocketError,
+                       closeCode: URLSessionWebSocketTask.CloseCode? = nil)
+    {
+        guard task === self.task else { return } // ignore stale tasks
+        teardown(code: .goingAway)
+
+        // Server said "go away" for policy/auth reasons: don't hammer it.
+        if closeCode == .policyViolation {
+            wantsConnection = false
+            state = .failed(.policyViolationError)
+            return
+        }
+
+        guard wantsConnection else {
+            state = .failed(error)
+            return
+        }
+        scheduleReconnect()
+    }
+}
+
+private extension WebSocket {
+    var pingInterval: Duration {
+        configuration.pingInterval
+    }
+
+    var flushInterval: Duration {
+        configuration.flushInterval
+    }
+
+    var maxBackoff: TimeInterval {
+        configuration.maxBackoff
+    }
+}
+
+private extension WebSocket {
+    func invalidateConfiguration() {
+        guard wantsConnection else { return }
+        disconnect()
+        connect()
+    }
+
+    func invalidateState() {
+        stateContinuation.yield(state)
+    }
+}
+
+private extension WebSocket {
+    func subscribeEventsIfNeeds() {
+        guard webSocketEventsTask == nil else { return }
+
+        let events = webSocketDelegate.events
+
+        webSocketEventsTask = Task { [weak self] in
+            for await event in events {
+                await self?.recieve(event: event)
+            }
+        }
+    }
+}
+
+private extension WebSocket {
     // MARK: - Network reachability
 
     func startPathMonitor() {
@@ -353,48 +399,6 @@ private extension WebSocket {
 }
 
 private extension WebSocket {
-    // MARK: - Error handlening
-
-    func handleFailure(_ task: URLSessionWebSocketTask,
-                       error: WebSocketError,
-                       closeCode: URLSessionWebSocketTask.CloseCode? = nil)
-    {
-        guard task === self.task else { return } // ignore stale tasks
-        teardown(code: .goingAway)
-
-        // Server said "go away" for policy/auth reasons: don't hammer it.
-        if closeCode == .policyViolation {
-            wantsConnection = false
-            state = .failed(.policyViolationError)
-            return
-        }
-
-        guard wantsConnection else {
-            state = .failed(error)
-            return
-        }
-        scheduleReconnect()
-    }
-
-    func scheduleReconnect() {
-        reconnectTask?.cancel()
-        guard networkAvailable else {
-            // The path monitor will call open() when the network returns.
-            state = .reconnecting(attempt: attempt, delay: 0)
-            return
-        }
-        attempt += 1
-        let base = min(maxBackoff, pow(2, Double(attempt - 1)))
-        let delay = base * Double.random(in: 0.8 ... 1.2)
-        state = .reconnecting(attempt: attempt, delay: delay)
-
-        reconnectTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(delay))
-            guard !Task.isCancelled else { return }
-            await self?.open()
-        }
-    }
-
     func startPing(_ task: URLSessionWebSocketTask) {
         pingTask?.cancel()
         pingTask = Task { [weak self, pingInterval] in
