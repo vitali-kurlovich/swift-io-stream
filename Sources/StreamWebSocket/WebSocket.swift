@@ -5,6 +5,11 @@
 import Foundation
 import Network
 
+#if WebsocketLogging
+    import Logging
+    private let logger: Logger = .init(label: String(describing: WebSocket.self))
+#endif
+
 public actor WebSocket {
     public typealias Configuration = WebSocketConfiguration
     public typealias State = WebSocketState
@@ -135,6 +140,10 @@ public extension WebSocket {
 
 public extension WebSocket {
     func connect() {
+        #if WebsocketLogging
+            logger.info("Connect")
+        #endif
+
         subscribeEventsIfNeeds()
 
         wantsConnection = true
@@ -146,6 +155,10 @@ public extension WebSocket {
     }
 
     func disconnect() {
+        #if WebsocketLogging
+            logger.info("Disconnect")
+        #endif
+
         wantsConnection = false
         reconnectTask?.cancel()
         teardown(code: .normalClosure)
@@ -156,6 +169,10 @@ public extension WebSocket {
 
     /// Call when the app goes to background. Keeps the "wants connection" intent.
     func suspend() {
+        #if WebsocketLogging
+            logger.info("Suspend")
+        #endif
+
         guard wantsConnection else { return }
         reconnectTask?.cancel()
         teardown(code: .goingAway)
@@ -166,6 +183,10 @@ public extension WebSocket {
 
     /// Call when the app becomes active again.
     func resume() {
+        #if WebsocketLogging
+            logger.info("Resume")
+        #endif
+
         guard wantsConnection, task == nil else { return }
         attempt = 0
         open()
@@ -178,12 +199,20 @@ public extension WebSocket {
     func send(_ text: String) async throws {
         guard let task, state == .connected else { throw URLError(.notConnectedToInternet) }
         try await task.send(.string(text))
+
+        #if WebsocketLogging
+            logger.debug("Send text: \(text)")
+        #endif
     }
 
     func send(_ data: Data) async throws {
         guard let task, state == .connected else { throw URLError(.notConnectedToInternet) }
 
         try await task.send(.data(data))
+
+        #if WebsocketLogging
+            logger.debug("Send data: \(data)")
+        #endif
     }
 
     func sendPing() async throws {
@@ -198,6 +227,10 @@ public extension WebSocket {
                 }
             }
         }
+
+        #if WebsocketLogging
+            logger.debug("Send ping")
+        #endif
     }
 }
 
@@ -224,9 +257,17 @@ private extension WebSocket {
         receiveTask = Task { [weak self] in
             await self?.receiveLoop(task)
         }
+
+        #if WebsocketLogging
+            logger.debug("Start receive loop")
+        #endif
     }
 
     func teardown(code: URLSessionWebSocketTask.CloseCode) {
+        #if WebsocketLogging
+            logger.debug("Teardown with code: \(code)")
+        #endif
+
         receiveTask?.cancel(); receiveTask = nil
         pingTask?.cancel(); pingTask = nil
         task?.cancel(with: code, reason: nil)
@@ -240,8 +281,18 @@ private extension WebSocket {
                 switch message {
                 case let .string(text):
                     continuation.yield(.text(text))
+
+                    #if WebsocketLogging
+                        logger.debug("Receive text: \(text)")
+                    #endif
+
                 case let .data(data):
                     continuation.yield(.data(data))
+
+                    #if WebsocketLogging
+                        logger.debug("Receive data: \(data)")
+                    #endif
+
                 @unknown default: return
                 }
             } catch {
@@ -254,6 +305,10 @@ private extension WebSocket {
     }
 
     func scheduleReconnect() {
+        #if WebsocketLogging
+            logger.debug("Schedule reconnect")
+        #endif
+
         reconnectTask?.cancel()
         guard networkAvailable else {
             // The path monitor will call open() when the network returns.
@@ -292,6 +347,10 @@ private extension WebSocket {
         _ task: URLSessionWebSocketTask,
         protocolName _: String?
     ) {
+        #if WebsocketLogging
+            logger.info("Did open connection")
+        #endif
+
         guard task === self.task else { return }
         attempt = 0
         state = .connected
@@ -299,6 +358,10 @@ private extension WebSocket {
     }
 
     func didCloseConnection(_ task: URLSessionWebSocketTask, code: URLSessionWebSocketTask.CloseCode) {
+        #if WebsocketLogging
+            logger.info("Did close connection with code:\(code)")
+        #endif
+
         guard task === self.task else { return }
 
         handleFailure(task, error: .urlError(.networkConnectionLost), closeCode: code)
@@ -312,6 +375,9 @@ private extension WebSocket {
                        error: WebSocketError,
                        closeCode: URLSessionWebSocketTask.CloseCode? = nil)
     {
+        #if WebsocketLogging
+            logger.error("Handle failure: \(error)")
+        #endif
         guard task === self.task else { return } // ignore stale tasks
         teardown(code: .goingAway)
 
@@ -346,6 +412,10 @@ private extension WebSocket {
 
 private extension WebSocket {
     func invalidateConfiguration() {
+        #if WebsocketLogging
+            logger.debug("Update configuration")
+        #endif
+
         guard wantsConnection else { return }
         disconnect()
         connect()
@@ -353,6 +423,10 @@ private extension WebSocket {
 
     func invalidateState() {
         stateContinuation.yield(state)
+
+        #if WebsocketLogging
+            logger.debug("Update state: \(state)")
+        #endif
     }
 }
 
@@ -374,8 +448,20 @@ private extension WebSocket {
     // MARK: - Network reachability
 
     func startPathMonitor() {
+        #if WebsocketLogging
+
+            defer {
+                logger.debug("Start path monitor")
+            }
+
+        #endif
         pathMonitor.pathUpdateHandler = { [weak self] path in
             let available = path.status == .satisfied
+
+            #if WebsocketLogging
+                logger.debug("Network availablity changed: \(path.status)")
+            #endif
+
             Task {
                 await self?.networkChanged(available: available)
             }
@@ -385,6 +471,10 @@ private extension WebSocket {
 
     func stopPathMonitor() {
         pathMonitor.cancel()
+
+        #if WebsocketLogging
+            logger.debug("Cancel path monitor")
+        #endif
     }
 
     func networkChanged(available: Bool) {
@@ -400,6 +490,10 @@ private extension WebSocket {
 
 private extension WebSocket {
     func startPing(_ task: URLSessionWebSocketTask) {
+        #if WebsocketLogging
+            logger.debug("Scedule ping")
+        #endif
+
         pingTask?.cancel()
         pingTask = Task { [weak self, pingInterval] in
             while !Task.isCancelled {
@@ -408,6 +502,10 @@ private extension WebSocket {
                 do {
                     if let self, let pingUpdater = self.pingUpdater {
                         pingUpdater.ping(self)
+                        #if WebsocketLogging
+                            logger.debug("Send custom ping")
+                        #endif
+
                         return
                     }
 
@@ -415,8 +513,14 @@ private extension WebSocket {
                         task.sendPing { error in
                             if let error {
                                 cont.resume(throwing: error)
+                                #if WebsocketLogging
+                                    logger.error("Send ping error: \(error.localizedDescription)")
+                                #endif
                             } else {
                                 cont.resume()
+                                #if WebsocketLogging
+                                    logger.debug("Send ping")
+                                #endif
                             }
                         }
                     }
