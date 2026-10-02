@@ -29,14 +29,17 @@ public actor WebSocket {
         self.configuration = configuration
         session = URLSession(configuration: sessionConfiguration, delegate: nil, delegateQueue: nil)
 
-        (messagesStream, messagesContinuation) = AsyncStream<WebSocketMessage>.makeStream()
+        let (messagesStream, messagesContinuation) = AsyncStream<WebSocketMessage>.makeStream()
+        self.messagesContinuation = messagesContinuation
         messagesSharedStream = messagesStream.share()
 
-        (eventsStream, eventsContinuation) = AsyncStream<Event>
+        let (eventsStream, eventsContinuation) = AsyncStream<Event>
             .makeStream(bufferingPolicy: .bufferingNewest(1))
+        self.eventsContinuation = eventsContinuation
         eventsSharedStream = eventsStream.share()
 
-        (stateStream, stateContinuation) = AsyncStream<State>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        let (stateStream, stateContinuation) = AsyncStream<State>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        self.stateContinuation = stateContinuation
         stateSharedStream = stateStream.share()
 
         self.pingUpdater = pingUpdater
@@ -61,15 +64,12 @@ public actor WebSocket {
 
     private let webSocketDelegate = WebSocketDelegate()
 
-    private let messagesStream: AsyncStream<WebSocketMessage>
     private let messagesContinuation: AsyncStream<WebSocketMessage>.Continuation
     private let messagesSharedStream: any AsyncSequence<WebSocketMessage, Never>
 
-    private let eventsStream: AsyncStream<Event>
     private let eventsContinuation: AsyncStream<Event>.Continuation
     private let eventsSharedStream: any AsyncSequence<Event, Never>
 
-    private let stateStream: AsyncStream<State>
     private let stateContinuation: AsyncStream<State>.Continuation
     private let stateSharedStream: any AsyncSequence<State, Never>
 
