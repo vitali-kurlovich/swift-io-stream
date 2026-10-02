@@ -26,7 +26,7 @@ public actor WebSocket {
 
     public init(configuration: Configuration, sessionConfiguration: URLSessionConfiguration = .default, pingUpdater: (any WebSocketPing)? = nil) {
         self.configuration = configuration
-        session = URLSession(configuration: sessionConfiguration, delegate: webSocketDelegate, delegateQueue: nil)
+        session = URLSession(configuration: sessionConfiguration, delegate: nil, delegateQueue: nil)
 
         (messagesStream, messagesContinuation) = AsyncStream<WebSocketMessage>.makeStream()
         (eventsStream, eventsContinuation) = AsyncStream<Event>.makeStream()
@@ -247,6 +247,7 @@ private extension WebSocket {
         }
 
         let task = session.webSocketTask(with: request)
+        task.delegate = webSocketDelegate
         task.maximumMessageSize = 4 * 1024 * 1024
         self.task = task
         task.resume()
@@ -340,6 +341,10 @@ private extension WebSocket {
         case let .didClose(task, closeCode, data):
             didCloseConnection(task, code: closeCode)
             eventsContinuation.yield(.onDisconnet(self, task, closeCode, data))
+            
+        case let .didCompleteWithError(_, error):
+
+            break
         }
     }
 

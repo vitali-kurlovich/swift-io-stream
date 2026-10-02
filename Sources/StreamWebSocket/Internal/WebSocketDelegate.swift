@@ -8,6 +8,7 @@ final class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
     enum Events {
         case didOpen(URLSessionWebSocketTask, String?)
         case didClose(URLSessionWebSocketTask, URLSessionWebSocketTask.CloseCode, Data?)
+        case didCompleteWithError(URLSessionTask, error: (any Error)?)
     }
 
     var events: AsyncStream<Events> {
@@ -41,5 +42,22 @@ final class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
                     reason: Data?)
     {
         continuation.yield(.didClose(webSocketTask, closeCode, reason))
+    }
+    
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: (any Error)?
+    ) {
+#if WebsocketLogging
+            if let error {
+                logger
+                    .error(
+                        "didCompleteWithError: \(error.localizedDescription)"
+                    )
+            }
+#endif
+        
+        continuation.yield(.didCompleteWithError(task, error: error))
     }
 }
