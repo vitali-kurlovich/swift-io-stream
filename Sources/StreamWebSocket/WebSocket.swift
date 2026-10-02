@@ -2,6 +2,7 @@
 //  Created by Kurlovich Vitali on 9/26/26.
 //
 
+import AsyncAlgorithms
 import Foundation
 import Network
 
@@ -29,9 +30,14 @@ public actor WebSocket {
         session = URLSession(configuration: sessionConfiguration, delegate: nil, delegateQueue: nil)
 
         (messagesStream, messagesContinuation) = AsyncStream<WebSocketMessage>.makeStream()
+        messagesSharedStream = messagesStream.share()
+
         (eventsStream, eventsContinuation) = AsyncStream<Event>
             .makeStream(bufferingPolicy: .bufferingNewest(1))
+        eventsSharedStream = eventsStream.share()
+
         (stateStream, stateContinuation) = AsyncStream<State>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        stateSharedStream = stateStream.share()
 
         self.pingUpdater = pingUpdater
 
@@ -57,12 +63,15 @@ public actor WebSocket {
 
     private let messagesStream: AsyncStream<WebSocketMessage>
     private let messagesContinuation: AsyncStream<WebSocketMessage>.Continuation
+    private let messagesSharedStream: any AsyncSequence<WebSocketMessage, Never>
 
     private let eventsStream: AsyncStream<Event>
     private let eventsContinuation: AsyncStream<Event>.Continuation
+    private let eventsSharedStream: any AsyncSequence<Event, Never>
 
     private let stateStream: AsyncStream<State>
     private let stateContinuation: AsyncStream<State>.Continuation
+    private let stateSharedStream: any AsyncSequence<State, Never>
 
     private let pingUpdater: (any WebSocketPing)?
 
@@ -91,7 +100,7 @@ public extension WebSocket {
     var states: AsyncStream<State> {
         return AsyncStream<State>(bufferingPolicy: .bufferingNewest(1)) { continuation in
             let task = Task {
-                for await state in stateStream {
+                for await state in stateSharedStream {
                     continuation.yield(state)
                 }
                 continuation.finish()
@@ -106,7 +115,7 @@ public extension WebSocket {
     var messages: AsyncStream<WebSocketMessage> {
         return AsyncStream<WebSocketMessage> { continuation in
             let task = Task {
-                for await message in messagesStream {
+                for await message in messagesSharedStream {
                     continuation.yield(message)
                 }
                 continuation.finish()
@@ -123,7 +132,7 @@ public extension WebSocket {
             bufferingPolicy: .bufferingNewest(1)
         ) { continuation in
             let task = Task {
-                for await event in eventsStream {
+                for await event in eventsSharedStream {
                     continuation.yield(event)
                 }
                 continuation.finish()
@@ -160,7 +169,7 @@ public extension WebSocket {
         wantsConnection = false
         reconnectTask?.cancel()
         teardown(code: .normalClosure)
-       
+
         stopPathMonitor()
     }
 
@@ -173,7 +182,7 @@ public extension WebSocket {
         guard wantsConnection else { return }
         reconnectTask?.cancel()
         teardown(code: .goingAway)
-      
+
         stopPathMonitor()
     }
 
@@ -341,10 +350,9 @@ private extension WebSocket {
         case let .didClose(task, closeCode, data):
             didCloseConnection(task, code: closeCode)
             eventsContinuation.yield(.onDisconnet(self, task, closeCode, data))
-            
+
         case let .didCompleteWithError(task, error):
             eventsContinuation.yield(.didCompleteWithError(self, task, error))
-            break
         }
     }
 

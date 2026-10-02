@@ -43,21 +43,21 @@ final class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
     {
         continuation.yield(.didClose(webSocketTask, closeCode, reason))
     }
-    
+
     func urlSession(
-        _ session: URLSession,
+        _: URLSession,
         task: URLSessionTask,
         didCompleteWithError error: (any Error)?
     ) {
-#if WebsocketLogging
+        #if WebsocketLogging
             if let error {
                 logger
                     .error(
                         "didCompleteWithError: \(error.localizedDescription)"
                     )
             }
-#endif
-        
+        #endif
+
         continuation.yield(.didCompleteWithError(task, error: error))
     }
 }
