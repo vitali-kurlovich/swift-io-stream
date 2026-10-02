@@ -29,8 +29,9 @@ public actor WebSocket {
         session = URLSession(configuration: sessionConfiguration, delegate: nil, delegateQueue: nil)
 
         (messagesStream, messagesContinuation) = AsyncStream<WebSocketMessage>.makeStream()
-        (eventsStream, eventsContinuation) = AsyncStream<Event>.makeStream()
-        (stateStream, stateContinuation) = AsyncStream<State>.makeStream()
+        (eventsStream, eventsContinuation) = AsyncStream<Event>
+            .makeStream(bufferingPolicy: .bufferingNewest(1))
+        (stateStream, stateContinuation) = AsyncStream<State>.makeStream(bufferingPolicy: .bufferingNewest(1))
 
         self.pingUpdater = pingUpdater
 
@@ -342,8 +343,8 @@ private extension WebSocket {
             didCloseConnection(task, code: closeCode)
             eventsContinuation.yield(.onDisconnet(self, task, closeCode, data))
             
-        case let .didCompleteWithError(_, error):
-
+        case let .didCompleteWithError(task, error):
+            eventsContinuation.yield(.didCompleteWithError(self, task, error))
             break
         }
     }
