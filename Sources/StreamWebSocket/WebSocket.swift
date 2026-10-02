@@ -294,6 +294,9 @@ private extension WebSocket {
                 }
             } catch {
                 if Task.isCancelled == false {
+                    #if WebsocketLogging
+                        logger.error("receiveLoop failure: \(error)")
+                    #endif
                     handleFailure(task, error: .receiveError)
                 }
                 return
