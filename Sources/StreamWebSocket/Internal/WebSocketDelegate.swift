@@ -4,6 +4,12 @@
 
 import Foundation
 
+#if WebsocketLogging
+    import Logging
+
+    private let logger: Logger = .init(label: String(describing: WebSocketDelegate.self))
+#endif
+
 final class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
     enum Events {
         case didOpen(URLSessionWebSocketTask, String?)
