@@ -22,9 +22,9 @@ final class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
     }
 
     override init() {
-        let (stream, continuation) = AsyncStream<Events>.makeStream()
-        self.stream = stream
-        self.continuation = continuation
+        (stream, continuation) = AsyncStream<Events>.makeStream(
+            bufferingPolicy: .bufferingNewest(1)
+        )
         super.init()
     }
 

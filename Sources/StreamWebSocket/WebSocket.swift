@@ -17,7 +17,10 @@ public actor WebSocket {
     public typealias Event = WebSocketEvent
 
     deinit {
-        continuation.finish()
+        messagesContinuation.finish()
+        stateContinuation.finish()
+        eventsContinuation.finish()
+
         webSocketEventsTask?.cancel()
     }
 
@@ -25,20 +28,13 @@ public actor WebSocket {
         self.configuration = configuration
         session = URLSession(configuration: sessionConfiguration, delegate: webSocketDelegate, delegateQueue: nil)
 
-        let (stream, continuation) = AsyncStream<WebSocketMessage>.makeStream()
-        self.stream = stream
-        self.continuation = continuation
+        (messagesStream, messagesContinuation) = AsyncStream<WebSocketMessage>.makeStream()
+        (eventsStream, eventsContinuation) = AsyncStream<Event>.makeStream()
+        (stateStream, stateContinuation) = AsyncStream<State>.makeStream()
 
-        let (eventsStream, eventsContinuation) = AsyncStream<Event>.makeStream()
-
-        self.eventsStream = eventsStream
-        self.eventsContinuation = eventsContinuation
-
-        let (stateStream, stateContinuation) = AsyncStream<State>.makeStream()
-
-        self.stateStream = stateStream
-        self.stateContinuation = stateContinuation
         self.pingUpdater = pingUpdater
+
+        stateContinuation.yield(.disconnected)
     }
 
     private let session: URLSession
@@ -58,8 +54,8 @@ public actor WebSocket {
 
     private let webSocketDelegate = WebSocketDelegate()
 
-    private let stream: AsyncStream<WebSocketMessage>
-    private let continuation: AsyncStream<WebSocketMessage>.Continuation
+    private let messagesStream: AsyncStream<WebSocketMessage>
+    private let messagesContinuation: AsyncStream<WebSocketMessage>.Continuation
 
     private let eventsStream: AsyncStream<Event>
     private let eventsContinuation: AsyncStream<Event>.Continuation
@@ -92,10 +88,8 @@ public extension WebSocket {
 
 public extension WebSocket {
     var states: AsyncStream<State> {
-        return AsyncStream<State> { continuation in
+        return AsyncStream<State>(bufferingPolicy: .bufferingNewest(1)) { continuation in
             let task = Task {
-                continuation.yield(state)
-
                 for await state in stateStream {
                     continuation.yield(state)
                 }
@@ -111,7 +105,7 @@ public extension WebSocket {
     var messages: AsyncStream<WebSocketMessage> {
         return AsyncStream<WebSocketMessage> { continuation in
             let task = Task {
-                for await message in stream {
+                for await message in messagesStream {
                     continuation.yield(message)
                 }
                 continuation.finish()
@@ -124,7 +118,9 @@ public extension WebSocket {
     }
 
     var events: AsyncStream<Event> {
-        AsyncStream<Event> { continuation in
+        AsyncStream<Event>(
+            bufferingPolicy: .bufferingNewest(1)
+        ) { continuation in
             let task = Task {
                 for await event in eventsStream {
                     continuation.yield(event)
@@ -281,14 +277,14 @@ private extension WebSocket {
                 let message = try await task.receive()
                 switch message {
                 case let .string(text):
-                    continuation.yield(.text(text))
+                    messagesContinuation.yield(.text(text))
 
                     #if WebsocketLogging
                         logger.debug("Receive text: \(text)")
                     #endif
 
                 case let .data(data):
-                    continuation.yield(.data(data))
+                    messagesContinuation.yield(.data(data))
 
                     #if WebsocketLogging
                         logger.debug("Receive data: \(data)")
@@ -450,11 +446,9 @@ private extension WebSocket {
 
     func startPathMonitor() {
         #if WebsocketLogging
-
             defer {
                 logger.debug("Start path monitor")
             }
-
         #endif
         pathMonitor.pathUpdateHandler = { [weak self] path in
             let available = path.status == .satisfied
