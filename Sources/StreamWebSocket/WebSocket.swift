@@ -160,8 +160,7 @@ public extension WebSocket {
         wantsConnection = false
         reconnectTask?.cancel()
         teardown(code: .normalClosure)
-        state = .disconnected
-
+       
         stopPathMonitor()
     }
 
@@ -174,8 +173,7 @@ public extension WebSocket {
         guard wantsConnection else { return }
         reconnectTask?.cancel()
         teardown(code: .goingAway)
-        state = .disconnected
-
+      
         stopPathMonitor()
     }
 
@@ -271,6 +269,7 @@ private extension WebSocket {
         pingTask?.cancel(); pingTask = nil
         task?.cancel(with: code, reason: nil)
         task = nil
+        state = .disconnected
     }
 
     func receiveLoop(_ task: URLSessionWebSocketTask) async {
