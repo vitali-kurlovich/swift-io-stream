@@ -98,7 +98,7 @@ public extension WebSocket {
 
 public extension WebSocket {
     var states: AsyncStream<State> {
-        return AsyncStream<State>(bufferingPolicy: .bufferingNewest(1)) { continuation in
+        return AsyncStream<State>(bufferingPolicy: .bufferingNewest(0)) { continuation in
             let task = Task {
                 for await state in stateSharedStream {
                     continuation.yield(state)
@@ -129,7 +129,7 @@ public extension WebSocket {
 
     var events: AsyncStream<Event> {
         AsyncStream<Event>(
-            bufferingPolicy: .bufferingNewest(1)
+            bufferingPolicy: .bufferingNewest(0)
         ) { continuation in
             let task = Task {
                 for await event in eventsSharedStream {

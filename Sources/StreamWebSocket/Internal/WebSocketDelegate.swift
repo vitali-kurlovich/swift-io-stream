@@ -30,7 +30,7 @@ final class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
 
     override init() {
         (stream, continuation) = AsyncStream<Events>.makeStream(
-            bufferingPolicy: .bufferingNewest(1)
+            bufferingPolicy: .bufferingNewest(0)
         )
         super.init()
     }
