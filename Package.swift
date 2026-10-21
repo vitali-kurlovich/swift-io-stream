@@ -19,6 +19,7 @@ let package = Package(
             targets: ["StreamWebSocket"]
         ),
     ],
+
     traits: [
         .trait(name: "WebsocketLogging", description: "Enables websocket logging features"),
         // .default(enabledTraits: ["WebsocketLogging"]),
@@ -28,6 +29,8 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-log", from: "1.15.1"),
         .package(url: "https://github.com/apple/swift-async-algorithms", from: "1.0.0"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.1.0"),
+
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
     ],
     targets: [
         .target(
@@ -42,6 +45,20 @@ let package = Package(
             ]
 
         ),
+
+        .testTarget(name: "StreamWebSocketTests",
+                    dependencies: [
+                        "StreamWebSocket",
+                        .product(name: "AsyncAlgorithms", package: "swift-async-algorithms"),
+                        .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
+                        .product(name: "NIOCore", package: "swift-nio"),
+                        .product(name: "NIOEmbedded", package: "swift-nio"),
+                        .product(name: "NIOPosix", package: "swift-nio"),
+                        .product(name: "NIOHTTP1", package: "swift-nio"),
+                        .product(name: "NIOWebSocket", package: "swift-nio"),
+                        .product(name: "NIOFoundationCompat", package: "swift-nio"),
+
+                    ]),
     ],
     swiftLanguageModes: [.v6]
 )
