@@ -11,35 +11,22 @@ import Foundation
 #endif
 
 final class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
-    enum Events {
-        case didOpen(URLSessionWebSocketTask, String?)
-        case didClose(URLSessionWebSocketTask, URLSessionWebSocketTask.CloseCode, Data?)
-        case didCompleteWithError(URLSessionTask, error: (any Error)?)
-    }
+    weak let webSocket: WebSocket?
 
-    var events: AsyncStream<Events> {
-        stream
-    }
-
-    private let stream: AsyncStream<Events>
-    private let continuation: AsyncStream<Events>.Continuation
-
-    deinit {
-        continuation.finish()
-    }
-
-    override init() {
-        (stream, continuation) = AsyncStream<Events>.makeStream(
-            bufferingPolicy: .bufferingNewest(0)
-        )
-        super.init()
+    init(webSocket: WebSocket!) {
+        self.webSocket = webSocket
     }
 
     func urlSession(_: URLSession,
                     webSocketTask: URLSessionWebSocketTask,
                     didOpenWithProtocol protocolName: String?)
     {
-        continuation.yield(.didOpen(webSocketTask, protocolName))
+        guard let webSocket else { return }
+
+        Task {
+            await webSocket
+                .didOpenConnection(webSocketTask, protocolName: protocolName)
+        }
     }
 
     func urlSession(_: URLSession,
@@ -47,7 +34,11 @@ final class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
                     didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
                     reason: Data?)
     {
-        continuation.yield(.didClose(webSocketTask, closeCode, reason))
+        guard let webSocket else { return }
+        Task {
+            await webSocket
+                .didCloseConnection(webSocketTask, code: closeCode, reason: reason)
+        }
     }
 
     func urlSession(
@@ -64,6 +55,11 @@ final class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
             }
         #endif
 
-        continuation.yield(.didCompleteWithError(task, error: error))
+        guard let webSocket else { return }
+
+        Task {
+            await webSocket.didCompleteWithError(task: task, error: error)
+            // .didCloseConnection(webSocketTask, code: closeCode, reason: reason)
+        }
     }
 }

@@ -21,8 +21,7 @@ public actor WebSocket {
         messagesContinuation.finish()
         stateContinuation.finish()
         eventsContinuation.finish()
-
-        webSocketEventsTask?.cancel()
+        task?.cancel()
     }
 
     public init(configuration: Configuration, sessionConfiguration: URLSessionConfiguration = .default, pingUpdater: (any WebSocketPing)? = nil) {
@@ -58,11 +57,9 @@ public actor WebSocket {
     private var pingTask: Task<Void, Never>?
     private var networkAvailable = true
 
-    private var webSocketEventsTask: Task<Void, Never>?
-
     private let pathMonitor = NWPathMonitor()
 
-    private let webSocketDelegate = WebSocketDelegate()
+    private lazy var webSocketDelegate: WebSocketDelegate = .init(webSocket: self)
 
     private let messagesContinuation: AsyncStream<WebSocketMessage>.Continuation
     private let messagesSharedStream: any AsyncSequence<WebSocketMessage, Never>
@@ -150,8 +147,6 @@ public extension WebSocket {
         #if WebsocketLogging
             logger.info("Connect")
         #endif
-
-        subscribeEventsIfNeeds()
 
         wantsConnection = true
         attempt = 0
@@ -338,27 +333,12 @@ private extension WebSocket {
     }
 }
 
-private extension WebSocket {
+extension WebSocket {
     // MARK: - Connection state change
-
-    func recieve(event: WebSocketDelegate.Events) {
-        switch event {
-        case let .didOpen(task, protocolName):
-            didOpenConnection(task, protocolName: protocolName)
-            eventsContinuation.yield(.onConnect(self, task, protocolName))
-
-        case let .didClose(task, closeCode, data):
-            didCloseConnection(task, code: closeCode)
-            eventsContinuation.yield(.onDisconnet(self, task, closeCode, data))
-
-        case let .didCompleteWithError(task, error):
-            eventsContinuation.yield(.didCompleteWithError(self, task, error))
-        }
-    }
 
     func didOpenConnection(
         _ task: URLSessionWebSocketTask,
-        protocolName _: String?
+        protocolName: String?
     ) {
         #if WebsocketLogging
             logger.info("Did open connection")
@@ -368,9 +348,11 @@ private extension WebSocket {
         attempt = 0
         state = .connected
         startPing(task)
+
+        eventsContinuation.yield(.onConnect(self, task, protocolName))
     }
 
-    func didCloseConnection(_ task: URLSessionWebSocketTask, code: URLSessionWebSocketTask.CloseCode) {
+    func didCloseConnection(_ task: URLSessionWebSocketTask, code: URLSessionWebSocketTask.CloseCode, reason: Data?) {
         #if WebsocketLogging
             logger.info("Did close connection with code:\(code)")
         #endif
@@ -378,6 +360,12 @@ private extension WebSocket {
         guard task === self.task else { return }
 
         handleFailure(task, error: .urlError(.networkConnectionLost), closeCode: code)
+
+        eventsContinuation.yield(.onDisconnet(self, task, code, reason))
+    }
+
+    func didCompleteWithError(task: URLSessionTask, error: (any Error)?) {
+        eventsContinuation.yield(.didCompleteWithError(self, task, error))
     }
 }
 
@@ -440,20 +428,6 @@ private extension WebSocket {
         #if WebsocketLogging
             logger.debug("Update state: \(state)")
         #endif
-    }
-}
-
-private extension WebSocket {
-    func subscribeEventsIfNeeds() {
-        guard webSocketEventsTask == nil else { return }
-
-        let events = webSocketDelegate.events
-
-        webSocketEventsTask = Task { [weak self] in
-            for await event in events {
-                await self?.recieve(event: event)
-            }
-        }
     }
 }
 
