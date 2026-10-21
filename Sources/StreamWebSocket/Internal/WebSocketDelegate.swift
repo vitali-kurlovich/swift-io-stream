@@ -59,7 +59,6 @@ final class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
 
         Task {
             await webSocket.didCompleteWithError(task: task, error: error)
-            // .didCloseConnection(webSocketTask, code: closeCode, reason: reason)
         }
     }
 }

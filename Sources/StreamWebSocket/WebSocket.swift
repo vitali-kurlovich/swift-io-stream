@@ -21,7 +21,7 @@ public actor WebSocket {
         messagesContinuation.finish()
         stateContinuation.finish()
         eventsContinuation.finish()
-        task?.cancel()
+        socketTask?.cancel()
     }
 
     public init(configuration: Configuration, sessionConfiguration: URLSessionConfiguration = .default, pingUpdater: (any WebSocketPing)? = nil) {
@@ -37,7 +37,7 @@ public actor WebSocket {
         self.eventsContinuation = eventsContinuation
         eventsSharedStream = eventsStream.share()
 
-        let (stateStream, stateContinuation) = AsyncStream<State>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        let (stateStream, stateContinuation) = AsyncStream<State>.makeStream(bufferingPolicy: .bufferingNewest(2))
         self.stateContinuation = stateContinuation
         stateSharedStream = stateStream.share()
 
@@ -51,7 +51,7 @@ public actor WebSocket {
     private var wantsConnection = false
     private var attempt = 0
 
-    private var task: URLSessionWebSocketTask?
+    private var socketTask: URLSessionWebSocketTask?
     private var reconnectTask: Task<Void, Never>?
     private var receiveTask: Task<Void, Never>?
     private var pingTask: Task<Void, Never>?
@@ -95,8 +95,9 @@ public extension WebSocket {
 
 public extension WebSocket {
     var states: AsyncStream<State> {
-        return AsyncStream<State>(bufferingPolicy: .bufferingNewest(0)) { continuation in
+        return AsyncStream<State>(bufferingPolicy: .bufferingNewest(1)) { continuation in
             let task = Task {
+
                 for await state in stateSharedStream {
                     continuation.yield(state)
                 }
@@ -126,7 +127,7 @@ public extension WebSocket {
 
     var events: AsyncStream<Event> {
         AsyncStream<Event>(
-            bufferingPolicy: .bufferingNewest(0)
+            bufferingPolicy: .bufferingNewest(1)
         ) { continuation in
             let task = Task {
                 for await event in eventsSharedStream {
@@ -187,7 +188,7 @@ public extension WebSocket {
             logger.info("Resume")
         #endif
 
-        guard wantsConnection, task == nil else { return }
+        guard wantsConnection, socketTask == nil else { return }
         attempt = 0
         open()
 
@@ -197,8 +198,10 @@ public extension WebSocket {
 
 public extension WebSocket {
     func send(_ text: String) async throws {
-        guard let task, state == .connected else { throw URLError(.notConnectedToInternet) }
-        try await task.send(.string(text))
+        guard let socketTask, state == .connected else { throw URLError(.notConnectedToInternet) }
+
+        try await socketTask.send(.string(text))
+        // try await socketTask.send(.string(text))
 
         #if WebsocketLogging
             logger.debug("Send text: \(text)")
@@ -206,9 +209,9 @@ public extension WebSocket {
     }
 
     func send(_ data: Data) async throws {
-        guard let task, state == .connected else { throw URLError(.notConnectedToInternet) }
+        guard let socketTask, state == .connected else { throw URLError(.notConnectedToInternet) }
 
-        try await task.send(.data(data))
+        try await socketTask.send(.data(data))
 
         #if WebsocketLogging
             logger.debug("Send data: \(data)")
@@ -216,7 +219,7 @@ public extension WebSocket {
     }
 
     func sendPing() async throws {
-        guard let task = task else { return }
+        guard let task = socketTask else { return }
 
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             task.sendPing { error in
@@ -252,12 +255,14 @@ private extension WebSocket {
         let task = session.webSocketTask(with: request)
         task.delegate = webSocketDelegate
         task.maximumMessageSize = 4 * 1024 * 1024
-        self.task = task
+        socketTask = task
         task.resume()
 
         receiveTask = Task { [weak self] in
             await self?.receiveLoop(task)
         }
+
+        print("Start receive loop")
 
         #if WebsocketLogging
             logger.debug("Start receive loop")
@@ -271,8 +276,8 @@ private extension WebSocket {
 
         receiveTask?.cancel(); receiveTask = nil
         pingTask?.cancel(); pingTask = nil
-        task?.cancel(with: code, reason: nil)
-        task = nil
+        socketTask?.cancel(with: code, reason: nil)
+        socketTask = nil
         state = .disconnected
     }
 
@@ -344,7 +349,6 @@ extension WebSocket {
             logger.info("Did open connection")
         #endif
 
-        guard task === self.task else { return }
         attempt = 0
         state = .connected
         startPing(task)
@@ -356,8 +360,6 @@ extension WebSocket {
         #if WebsocketLogging
             logger.info("Did close connection with code:\(code)")
         #endif
-
-        guard task === self.task else { return }
 
         handleFailure(task, error: .urlError(.networkConnectionLost), closeCode: code)
 
@@ -379,7 +381,7 @@ private extension WebSocket {
         #if WebsocketLogging
             logger.error("Handle failure: \(error)")
         #endif
-        guard task === self.task else { return } // ignore stale tasks
+        guard task === socketTask else { return } // ignore stale tasks
         teardown(code: .goingAway)
 
         // Server said "go away" for policy/auth reasons: don't hammer it.
