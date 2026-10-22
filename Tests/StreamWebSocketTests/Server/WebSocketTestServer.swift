@@ -61,6 +61,11 @@ extension WebSocketTestServer {
     }
 }
 
+enum WebSocketTestServerMode: Sendable {
+    case `default`
+    case failure
+}
+
 actor WebSocketTestServer: Sendable {
     private let group: MultiThreadedEventLoopGroup
     private var serverChannel: Channel?
@@ -68,14 +73,18 @@ actor WebSocketTestServer: Sendable {
     let sendQueue = WebSocketSendQueue()
     let socketHandler: ReadSocketHandler
 
+    let mode: WebSocketTestServerMode
+
     init(
         group: MultiThreadedEventLoopGroup,
+        mode: WebSocketTestServerMode = .default,
         recieveHandler: @escaping @Sendable (WebSocketOpcode, ByteBuffer) -> Void = {
             _,
             _ in
         }
     ) {
         self.group = group
+        self.mode = mode
         socketHandler = ReadSocketHandler(recieveHandler: recieveHandler)
     }
 
@@ -105,6 +114,8 @@ actor WebSocketTestServer: Sendable {
             }
         )
 
+        struct ConnectionRejected: Error {}
+
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(
                 ChannelOptions.backlog,
@@ -115,12 +126,17 @@ actor WebSocketTestServer: Sendable {
                 value: 1
             )
             .childChannelInitializer { channel in
-                channel.pipeline.configureHTTPServerPipeline(
-                    withServerUpgrade: (
-                        upgraders: [upgrader],
-                        completionHandler: { _ in }
+                switch self.mode {
+                case .failure:
+                    return channel.eventLoop.makeFailedFuture(ConnectionRejected())
+                case .default:
+                    return channel.pipeline.configureHTTPServerPipeline(
+                        withServerUpgrade: (
+                            upgraders: [upgrader],
+                            completionHandler: { _ in }
+                        )
                     )
-                )
+                }
 
             }.childChannelOption(
                 ChannelOptions.socketOption(.so_reuseaddr),

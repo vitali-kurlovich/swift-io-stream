@@ -64,6 +64,53 @@ final class WebSocketIntegrationTests {
     }
 }
 
+extension WebSocketIntegrationTests {
+    @Test(.timeLimit(.minutes(1)))
+    func clientWebSocketStatesServerReconecting() async throws {
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        let server = WebSocketTestServer(group: group, mode: .failure)
+
+        let port = try await server.start()
+        let url = socketURL(with: port)
+
+        let websocket = WebSocket(configuration: .init(url: url))
+
+        let task = Task {
+            var states: [WebSocketState] = []
+            for await state in await websocket.states.prefix(4) {
+                states.append(state)
+                print(state)
+            }
+
+            return states
+        }
+
+        await websocket.connect()
+
+        // try await Task.sleep(for: .seconds(5))
+
+        do {
+            try await server.stop()
+            try await group.shutdownGracefully()
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        let states = await task.value
+
+        #expect(states[0] == .disconnected)
+        #expect(states[1] == .connecting)
+        #expect(states[2] == .disconnected)
+
+        switch states[3] {
+        case let .reconnecting(attempt: attempt, delay: _):
+            #expect(attempt == 1)
+        default:
+            Issue.record("Incorrect state:\(states[3])")
+        }
+    }
+}
+
 /// States
 extension WebSocketIntegrationTests {
     @Test(.timeLimit(.minutes(1)))
