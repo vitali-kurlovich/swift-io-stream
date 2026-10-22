@@ -23,5 +23,9 @@ jobs:
 
     - name: Get swift version
       run: swift --version
+    
     - name: Build
       run: swift build
+      
+    - name: Test
+      run: swift test
