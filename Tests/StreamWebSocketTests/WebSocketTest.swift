@@ -42,8 +42,6 @@ final class WebSocketIntegrationTests {
         }
 
         #expect(port > 0)
-
-        // WebSocket(configuration: .init(url: <#T##URL#>))
     }
 
     @Test

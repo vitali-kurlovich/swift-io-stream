@@ -203,7 +203,6 @@ public extension WebSocket {
         guard let socketTask, state == .connected else { throw URLError(.notConnectedToInternet) }
 
         try await socketTask.send(.string(text))
-        // try await socketTask.send(.string(text))
 
         #if WebsocketLogging
             logger.debug("Send text: \(text)")
@@ -489,15 +488,10 @@ private extension WebSocket {
 
 private extension WebSocket {
     func startPing(_ task: URLSessionWebSocketTask) {
-        #if WebsocketLogging
-            logger.debug("Scedule ping")
-        #endif
-
         pingTask?.cancel()
         pingTask = Task { [weak self, pingInterval] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: pingInterval)
-                print("Ping sleep \(pingInterval)")
 
                 guard !Task.isCancelled else { return }
                 do {
