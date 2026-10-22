@@ -18,10 +18,12 @@ public actor WebSocket {
     public typealias Event = WebSocketEvent
 
     deinit {
+        pathMonitor?.pathUpdateHandler = nil
+        pathMonitor?.cancel()
+
         messagesContinuation.finish()
         stateContinuation.finish()
         eventsContinuation.finish()
-        socketTask?.cancel()
     }
 
     public init(configuration: Configuration, sessionConfiguration: URLSessionConfiguration = .default, pingUpdater: (any WebSocketPing)? = nil) {
@@ -57,7 +59,7 @@ public actor WebSocket {
     private var pingTask: Task<Void, Never>?
     private var networkAvailable = true
 
-    private let pathMonitor = NWPathMonitor()
+    private var pathMonitor: NWPathMonitor?
 
     private lazy var webSocketDelegate: WebSocketDelegate = .init(webSocket: self)
 
@@ -262,8 +264,6 @@ private extension WebSocket {
             await self?.receiveLoop(task)
         }
 
-        print("Start receive loop")
-
         #if WebsocketLogging
             logger.debug("Start receive loop")
         #endif
@@ -276,7 +276,9 @@ private extension WebSocket {
 
         receiveTask?.cancel(); receiveTask = nil
         pingTask?.cancel(); pingTask = nil
+
         socketTask?.cancel(with: code, reason: nil)
+
         socketTask = nil
         state = .disconnected
     }
@@ -349,6 +351,8 @@ extension WebSocket {
             logger.info("Did open connection")
         #endif
 
+        guard task === socketTask else { return } // ignore stale tasks
+
         attempt = 0
         state = .connected
         startPing(task)
@@ -361,12 +365,16 @@ extension WebSocket {
             logger.info("Did close connection with code:\(code)")
         #endif
 
+        guard task === socketTask else { return } // ignore stale tasks
+
         handleFailure(task, error: .urlError(.networkConnectionLost), closeCode: code)
 
         eventsContinuation.yield(.onDisconnet(self, task, code, reason))
     }
 
     func didCompleteWithError(task: URLSessionTask, error: (any Error)?) {
+        guard task === socketTask else { return } // ignore stale tasks
+
         eventsContinuation.yield(.didCompleteWithError(self, task, error))
     }
 }
@@ -442,7 +450,11 @@ private extension WebSocket {
                 logger.debug("Start path monitor")
             }
         #endif
-        pathMonitor.pathUpdateHandler = { [weak self] path in
+        pathMonitor?.pathUpdateHandler = nil
+        pathMonitor?.cancel()
+        pathMonitor = NWPathMonitor()
+
+        pathMonitor?.pathUpdateHandler = { [weak self] path in
             let available = path.status == .satisfied
 
             #if WebsocketLogging
@@ -453,12 +465,12 @@ private extension WebSocket {
                 await self?.networkChanged(available: available)
             }
         }
-        pathMonitor.start(queue: DispatchQueue(label: "ws.path-monitor"))
+        pathMonitor?.start(queue: DispatchQueue(label: "ws.path-monitor"))
     }
 
     func stopPathMonitor() {
-        pathMonitor.cancel()
-
+        pathMonitor?.cancel()
+        pathMonitor = nil
         #if WebsocketLogging
             logger.debug("Cancel path monitor")
         #endif
@@ -485,15 +497,25 @@ private extension WebSocket {
         pingTask = Task { [weak self, pingInterval] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: pingInterval)
+                print("Ping sleep \(pingInterval)")
+
                 guard !Task.isCancelled else { return }
                 do {
                     if let self, let pingUpdater = self.pingUpdater {
-                        pingUpdater.ping(self)
-                        #if WebsocketLogging
-                            logger.debug("Send custom ping")
-                        #endif
+                        do {
+                            try await pingUpdater.ping(self)
 
-                        return
+                            #if WebsocketLogging
+                                logger.debug("Send custom ping")
+                            #endif
+
+                        } catch {
+                            #if WebsocketLogging
+                                logger.error(error.localizedDescription)
+                            #endif
+                        }
+
+                        continue
                     }
 
                     try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in

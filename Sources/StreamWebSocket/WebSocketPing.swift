@@ -3,5 +3,5 @@
 //
 
 public protocol WebSocketPing: Sendable {
-    func ping(_ socket: WebSocket)
+    func ping(_ socket: WebSocket) async throws
 }

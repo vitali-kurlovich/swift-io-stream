@@ -17,18 +17,6 @@ enum ChannelError: Error {
     case outputClosed
 }
 
-final class WritabilityHandler: ChannelInboundHandler, Sendable {
-    typealias InboundIn = WebSocketFrame
-
-    func channelWritabilityChanged(
-        context: ChannelHandlerContext
-    ) {
-        print("Writable:", context.channel.isWritable)
-
-        context.fireChannelWritabilityChanged()
-    }
-}
-
 extension WebSocketTestServer {
     func send(text: String) throws {
         guard let channel = serverChannel else {

@@ -26,7 +26,8 @@ final class ReadSocketHandler: ChannelInboundHandler, Sendable {
 
         switch frame.opcode {
         case .text:
-            recieveHandler(frame.opcode, frame.unmaskedData)
+            let payload = frame.unmaskedData
+            recieveHandler(frame.opcode, payload)
 
         case .binary:
             recieveHandler(frame.opcode, frame.unmaskedData)
@@ -36,8 +37,6 @@ final class ReadSocketHandler: ChannelInboundHandler, Sendable {
 
             recieveHandler(frame.opcode, payload)
 
-            print("Recive ping")
-            
             let pong = WebSocketFrame(
                 fin: true,
                 opcode: .pong,

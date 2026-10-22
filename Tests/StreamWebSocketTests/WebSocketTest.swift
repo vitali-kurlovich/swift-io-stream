@@ -24,7 +24,7 @@ extension WebSocketIntegrationTests {
 }
 
 final class WebSocketIntegrationTests {
-    @Test(.disabled())
+    @Test
     func serverStartsAndAcceptsConnections() async throws {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         let server = WebSocketTestServer(group: group)
@@ -46,7 +46,7 @@ final class WebSocketIntegrationTests {
         // WebSocket(configuration: .init(url: <#T##URL#>))
     }
 
-    @Test(.disabled())
+    @Test
     func serverLifecycleIsClean() async throws {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         let server = WebSocketTestServer(group: group)
@@ -130,8 +130,6 @@ extension WebSocketIntegrationTests {
 
         let websocket = WebSocket(configuration: .init(url: url))
 
-      
-        
         let disconnectTask = Task {
             var states: [WebSocketState] = []
             for await state in await websocket.states.prefix(4) {
@@ -141,7 +139,7 @@ extension WebSocketIntegrationTests {
 
             return states
         }
-        
+
         await websocket.connect()
 
         try await Task.sleep(for: .seconds(5))
@@ -153,7 +151,7 @@ extension WebSocketIntegrationTests {
             Issue.record("Unexpected error: \(error)")
         }
 
-        #expect(await disconnectTask.value == [ .disconnected, .connecting, .connected,  .disconnected])
+        #expect(await disconnectTask.value == [.disconnected, .connecting, .connected, .disconnected])
     }
 }
 
@@ -379,6 +377,63 @@ extension WebSocketIntegrationTests {
             #expect(await websocket.state == .connected)
 
             try await Task.sleep(for: .seconds(18))
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func clientWebSocketCustomPing() async throws {
+        struct TestCustomPing: WebSocketPing {
+            func ping(_ socket: WebSocket) async throws {
+                print("CustomPing")
+
+                try await socket.send("CustomPing")
+            }
+        }
+
+        try await confirmation(expectedCount: 3) { confirm in
+            let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+
+            let server = WebSocketTestServer(group: group) { opcode, buffer in
+                #expect(opcode == .text)
+
+                let text = String(buffer: buffer)
+
+                #expect(text == "CustomPing")
+
+                confirm.confirm()
+            }
+
+            defer {
+                Task {
+                    do {
+                        try await Task.sleep(for: .seconds(2))
+                        try await server.stop()
+                        try await group.shutdownGracefully()
+                    } catch {
+                        Issue.record("Unexpected error: \(error)")
+                    }
+                }
+            }
+
+            let port = try await server.start()
+            #expect(port > 0)
+            let url = socketURL(with: port)
+
+            let websocket = WebSocket(
+                configuration: .init(url: url, pingInterval: .seconds(3)),
+                pingUpdater: TestCustomPing()
+            )
+
+            try await Task.sleep(for: .seconds(4))
+
+            await websocket.connect()
+
+            try await Task.sleep(for: .seconds(1))
+
+            #expect(await websocket.state == .connected)
+
+            try await Task.sleep(for: .seconds(11))
+            await websocket.disconnect()
         }
     }
 }

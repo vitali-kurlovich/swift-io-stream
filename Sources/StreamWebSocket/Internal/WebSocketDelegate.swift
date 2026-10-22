@@ -13,7 +13,7 @@ import Foundation
 final class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
     weak let webSocket: WebSocket?
 
-    init(webSocket: WebSocket!) {
+    init(webSocket: WebSocket) {
         self.webSocket = webSocket
     }
 
@@ -21,8 +21,7 @@ final class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
                     webSocketTask: URLSessionWebSocketTask,
                     didOpenWithProtocol protocolName: String?)
     {
-        guard let webSocket else { return }
-
+        guard let webSocket = webSocket else { return }
         Task {
             await webSocket
                 .didOpenConnection(webSocketTask, protocolName: protocolName)
@@ -34,7 +33,7 @@ final class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
                     didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
                     reason: Data?)
     {
-        guard let webSocket else { return }
+        guard let webSocket = webSocket else { return }
         Task {
             await webSocket
                 .didCloseConnection(webSocketTask, code: closeCode, reason: reason)
@@ -55,8 +54,7 @@ final class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
             }
         #endif
 
-        guard let webSocket else { return }
-
+        guard let webSocket = webSocket else { return }
         Task {
             await webSocket.didCompleteWithError(task: task, error: error)
         }
