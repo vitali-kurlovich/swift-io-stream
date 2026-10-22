@@ -8,5 +8,7 @@ public enum WebSocketError: Error, Equatable, Sendable {
     case sendPingError
     case receiveError
     case urlError(URLError.Code)
+    case handshakeFailed(statusCode: Int)
+    case closedByServer(code: URLSessionWebSocketTask.CloseCode, reason: Data?)
     case policyViolationError
 }

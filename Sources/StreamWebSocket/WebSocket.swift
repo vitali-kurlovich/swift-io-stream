@@ -15,7 +15,6 @@ import Network
 public actor WebSocket {
     public typealias Configuration = WebSocketConfiguration
     public typealias State = WebSocketState
-    public typealias Event = WebSocketEvent
 
     deinit {
         pathMonitor?.pathUpdateHandler = nil
@@ -23,7 +22,6 @@ public actor WebSocket {
 
         messagesContinuation.finish()
         stateContinuation.finish()
-        eventsContinuation.finish()
     }
 
     public init(configuration: Configuration, sessionConfiguration: URLSessionConfiguration = .default, pingUpdater: (any WebSocketPing)? = nil) {
@@ -33,11 +31,6 @@ public actor WebSocket {
         let (messagesStream, messagesContinuation) = AsyncStream<WebSocketMessage>.makeStream()
         self.messagesContinuation = messagesContinuation
         messagesSharedStream = messagesStream.share()
-
-        let (eventsStream, eventsContinuation) = AsyncStream<Event>
-            .makeStream(bufferingPolicy: .bufferingNewest(1))
-        self.eventsContinuation = eventsContinuation
-        eventsSharedStream = eventsStream.share()
 
         let (stateStream, stateContinuation) = AsyncStream<State>.makeStream(bufferingPolicy: .bufferingNewest(2))
         self.stateContinuation = stateContinuation
@@ -65,9 +58,6 @@ public actor WebSocket {
 
     private let messagesContinuation: AsyncStream<WebSocketMessage>.Continuation
     private let messagesSharedStream: any AsyncSequence<WebSocketMessage, Never>
-
-    private let eventsContinuation: AsyncStream<Event>.Continuation
-    private let eventsSharedStream: any AsyncSequence<Event, Never>
 
     private let stateContinuation: AsyncStream<State>.Continuation
     private let stateSharedStream: any AsyncSequence<State, Never>
@@ -117,23 +107,6 @@ public extension WebSocket {
             let task = Task {
                 for await message in messagesSharedStream {
                     continuation.yield(message)
-                }
-                continuation.finish()
-            }
-
-            continuation.onTermination = { _ in
-                task.cancel()
-            }
-        }
-    }
-
-    var events: AsyncStream<Event> {
-        AsyncStream<Event>(
-            bufferingPolicy: .bufferingNewest(1)
-        ) { continuation in
-            let task = Task {
-                for await event in eventsSharedStream {
-                    continuation.yield(event)
                 }
                 continuation.finish()
             }
@@ -308,7 +281,7 @@ private extension WebSocket {
                     #if WebsocketLogging
                         logger.error("receiveLoop failure: \(error)")
                     #endif
-                    handleFailure(task, error: .receiveError)
+                    handleFailure(task, error: failure(for: task, error: error))
                 }
                 return
             }
@@ -343,8 +316,7 @@ extension WebSocket {
     // MARK: - Connection state change
 
     func didOpenConnection(
-        _ task: URLSessionWebSocketTask,
-        protocolName: String?
+        _ task: URLSessionWebSocketTask
     ) {
         #if WebsocketLogging
             logger.info("Did open connection")
@@ -355,47 +327,39 @@ extension WebSocket {
         attempt = 0
         state = .connected
         startPing(task)
-
-        eventsContinuation.yield(.onConnect(self, task, protocolName))
     }
 
-    func didCloseConnection(_ task: URLSessionWebSocketTask, code: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+    func didCloseConnection(_ task: URLSessionWebSocketTask, code: URLSessionWebSocketTask.CloseCode) {
         #if WebsocketLogging
             logger.info("Did close connection with code:\(code)")
         #endif
 
-        guard task === socketTask else { return } // ignore stale tasks
-
-        handleFailure(task, error: .urlError(.networkConnectionLost), closeCode: code)
-
-        eventsContinuation.yield(.onDisconnet(self, task, code, reason))
+        handleFailure(task, error: failure(for: task, error: URLError(.networkConnectionLost)))
     }
 
     func didCompleteWithError(task: URLSessionTask, error: (any Error)?) {
-        guard task === socketTask else { return } // ignore stale tasks
+        // Usually arrives after receiveLoop has already handled the failure; then it's ignored as stale.
+        guard let task = task as? URLSessionWebSocketTask else { return }
 
-        eventsContinuation.yield(.didCompleteWithError(self, task, error))
+        handleFailure(task, error: failure(for: task, error: error ?? URLError(.networkConnectionLost)))
     }
 }
 
 private extension WebSocket {
     // MARK: - Error handlening
 
-    func handleFailure(_ task: URLSessionWebSocketTask,
-                       error: WebSocketError,
-                       closeCode: URLSessionWebSocketTask.CloseCode? = nil)
-    {
+    func handleFailure(_ task: URLSessionWebSocketTask, error: WebSocketError) {
+        guard task === socketTask else { return } // ignore stale tasks
+
         #if WebsocketLogging
             logger.error("Handle failure: \(error)")
         #endif
-        guard task === socketTask else { return } // ignore stale tasks
+
         teardown(code: .goingAway)
 
-        // Server said "go away" for policy/auth reasons: don't hammer it.
-        if closeCode == .policyViolation {
+        // Server rejected us or ended the session on purpose: don't hammer it.
+        if error.isPermanent {
             wantsConnection = false
-            state = .failed(.policyViolationError)
-            return
         }
 
         guard wantsConnection else {
@@ -403,6 +367,39 @@ private extension WebSocket {
             return
         }
         scheduleReconnect()
+    }
+
+    func failure(for task: URLSessionWebSocketTask, error: any Error) -> WebSocketError {
+        if let response = task.response as? HTTPURLResponse, response.statusCode != 101 {
+            return .handshakeFailed(statusCode: response.statusCode)
+        }
+
+        switch task.closeCode {
+        case .policyViolation:
+            return .policyViolationError
+        case .invalid:
+            break
+        default:
+            return .closedByServer(code: task.closeCode, reason: task.closeReason)
+        }
+
+        if let urlError = error as? URLError {
+            return .urlError(urlError.code)
+        }
+        return .receiveError
+    }
+}
+
+private extension WebSocketError {
+    var isPermanent: Bool {
+        switch self {
+        case .policyViolationError,
+             .handshakeFailed(statusCode: 400 ..< 500),
+             .closedByServer(code: .normalClosure, reason: _):
+            true
+        default:
+            false
+        }
     }
 }
 

@@ -3,6 +3,7 @@ import Foundation
 import NIOCore
 import NIOFoundationCompat
 import NIOPosix
+import NIOWebSocket
 import StreamWebSocket
 import Testing
 
@@ -411,6 +412,77 @@ extension WebSocketIntegrationTests {
 
             try await Task.sleep(for: .seconds(9))
             await websocket.disconnect()
+        }
+    }
+}
+
+/// Server close
+extension WebSocketIntegrationTests {
+    func waitForState(
+        _ websocket: WebSocket,
+        timeout: Duration = .seconds(10),
+        where predicate: (WebSocketState) -> Bool
+    ) async throws -> WebSocketState {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            let state = await websocket.state
+            if predicate(state) {
+                return state
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        return await websocket.state
+    }
+
+    func serverClose(with code: WebSocketErrorCode) async throws -> WebSocketState {
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        let server = WebSocketTestServer(group: group)
+
+        defer {
+            try? await server.stop()
+            try? await group.shutdownGracefully()
+        }
+
+        let port = try await server.start()
+        let websocket = WebSocket(configuration: .init(url: socketURL(with: port)))
+
+        await websocket.connect()
+
+        #expect(try await waitForState(websocket) { $0 == .connected } == .connected)
+
+        try await server.close(code: code)
+
+        let state = try await waitForState(websocket) { $0 != .connected && $0 != .disconnected }
+
+        await websocket.disconnect()
+
+        return state
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func serverClosePolicyViolationFails() async throws {
+        let state = try await serverClose(with: .policyViolation)
+
+        #expect(state == .failed(.policyViolationError))
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func serverCloseNormalClosureFails() async throws {
+        let state = try await serverClose(with: .normalClosure)
+
+        guard case .failed(.closedByServer(code: .normalClosure, reason: _)) = state else {
+            Issue.record("Unexpected state: \(state)")
+            return
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func serverCloseGoingAwayReconnects() async throws {
+        let state = try await serverClose(with: .goingAway)
+
+        guard case .reconnecting = state else {
+            Issue.record("Unexpected state: \(state)")
+            return
         }
     }
 }

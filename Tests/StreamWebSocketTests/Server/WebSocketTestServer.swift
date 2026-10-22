@@ -38,6 +38,27 @@ extension WebSocketTestServer {
             )
         }
     }
+
+    func close(code: WebSocketErrorCode) throws {
+        guard let channel = serverChannel else {
+            throw ChannelError.channelNoExists
+        }
+
+        var buffer = channel.allocator.buffer(capacity: 2)
+        buffer.write(webSocketErrorCode: code)
+
+        let frame = WebSocketFrame(
+            fin: true,
+            opcode: .connectionClose,
+            data: buffer
+        )
+
+        channel.eventLoop.execute { [sendQueue] in
+            sendQueue.send(
+                frame
+            )
+        }
+    }
 }
 
 actor WebSocketTestServer: Sendable {
