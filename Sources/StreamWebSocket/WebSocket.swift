@@ -493,9 +493,11 @@ private extension WebSocket {
             while !Task.isCancelled {
                 try? await Task.sleep(for: pingInterval)
 
+                guard let self else { return }
+                
                 guard !Task.isCancelled else { return }
                 do {
-                    if let self, let pingUpdater = self.pingUpdater {
+                    if let pingUpdater = self.pingUpdater {
                         do {
                             try await pingUpdater.ping(self)
 
@@ -505,8 +507,10 @@ private extension WebSocket {
 
                         } catch {
                             #if WebsocketLogging
-                                logger.error(error.localizedDescription)
+                                logger.error("\(error.localizedDescription)")
                             #endif
+                            await handleFailure(task, error: .sendPingError)
+                            return
                         }
 
                         continue
@@ -528,7 +532,7 @@ private extension WebSocket {
                         }
                     }
                 } catch {
-                    await self?.handleFailure(task, error: .sendPingError)
+                    await self.handleFailure(task, error: .sendPingError)
                     return
                 }
             }
