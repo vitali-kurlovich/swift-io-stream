@@ -49,10 +49,9 @@ let package = Package(
         .testTarget(name: "StreamWebSocketTests",
                     dependencies: [
                         "StreamWebSocket",
-                        .product(name: "AsyncAlgorithms", package: "swift-async-algorithms"),
-                        .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
+
                         .product(name: "NIOCore", package: "swift-nio"),
-                        .product(name: "NIOEmbedded", package: "swift-nio"),
+
                         .product(name: "NIOPosix", package: "swift-nio"),
                         .product(name: "NIOHTTP1", package: "swift-nio"),
                         .product(name: "NIOWebSocket", package: "swift-nio"),

@@ -71,13 +71,11 @@ extension WebSocketIntegrationTests {
         let server = WebSocketTestServer(group: group)
 
         defer {
-            Task {
-                do {
-                    try await server.stop()
-                    try await group.shutdownGracefully()
-                } catch {
-                    Issue.record("Unexpected error: \(error)")
-                }
+            do {
+                try await server.stop()
+                try await group.shutdownGracefully()
+            } catch {
+                Issue.record("Unexpected error: \(error)")
             }
         }
 
@@ -90,7 +88,6 @@ extension WebSocketIntegrationTests {
         let connectTask = Task {
             var states: [WebSocketState] = []
             for await state in await websocket.states.prefix(3) {
-                print(state)
                 states.append(state)
             }
 
@@ -106,7 +103,6 @@ extension WebSocketIntegrationTests {
         let disconnectTask = Task {
             var states: [WebSocketState] = []
             for await state in await websocket.states.prefix(1) {
-                print(state)
                 states.append(state)
             }
 
@@ -131,7 +127,6 @@ extension WebSocketIntegrationTests {
         let disconnectTask = Task {
             var states: [WebSocketState] = []
             for await state in await websocket.states.prefix(4) {
-                print(state)
                 states.append(state)
             }
 
@@ -161,13 +156,11 @@ extension WebSocketIntegrationTests {
         let server = WebSocketTestServer(group: group)
 
         defer {
-            Task {
-                do {
-                    try await server.stop()
-                    try await group.shutdownGracefully()
-                } catch {
-                    Issue.record("Unexpected error: \(error)")
-                }
+            do {
+                try await server.stop()
+                try await group.shutdownGracefully()
+            } catch {
+                Issue.record("Unexpected error: \(error)")
             }
         }
 
@@ -180,7 +173,6 @@ extension WebSocketIntegrationTests {
         let messagesTask = Task {
             var messages: [WebSocketMessage] = []
             for await message in await websocket.messages.prefix(3) {
-                print(message)
                 messages.append(message)
             }
 
@@ -222,13 +214,11 @@ extension WebSocketIntegrationTests {
             }
 
             defer {
-                Task {
-                    do {
-                        try await server.stop()
-                        try await group.shutdownGracefully()
-                    } catch {
-                        Issue.record("Unexpected error: \(error)")
-                    }
+                do {
+                    try await server.stop()
+                    try await group.shutdownGracefully()
+                } catch {
+                    Issue.record("Unexpected error: \(error)")
                 }
             }
 
@@ -266,13 +256,11 @@ extension WebSocketIntegrationTests {
             }
 
             defer {
-                Task {
-                    do {
-                        try await server.stop()
-                        try await group.shutdownGracefully()
-                    } catch {
-                        Issue.record("Unexpected error: \(error)")
-                    }
+                do {
+                    try await server.stop()
+                    try await group.shutdownGracefully()
+                } catch {
+                    Issue.record("Unexpected error: \(error)")
                 }
             }
 
@@ -308,13 +296,11 @@ extension WebSocketIntegrationTests {
             }
 
             defer {
-                Task {
-                    do {
-                        try await server.stop()
-                        try await group.shutdownGracefully()
-                    } catch {
-                        Issue.record("Unexpected error: \(error)")
-                    }
+                do {
+                    try await server.stop()
+                    try await group.shutdownGracefully()
+                } catch {
+                    Issue.record("Unexpected error: \(error)")
                 }
             }
 
@@ -350,13 +336,11 @@ extension WebSocketIntegrationTests {
             }
 
             defer {
-                Task {
-                    do {
-                        try await server.stop()
-                        try await group.shutdownGracefully()
-                    } catch {
-                        Issue.record("Unexpected error: \(error)")
-                    }
+                do {
+                    try await server.stop()
+                    try await group.shutdownGracefully()
+                } catch {
+                    Issue.record("Unexpected error: \(error)")
                 }
             }
 
@@ -382,8 +366,6 @@ extension WebSocketIntegrationTests {
     func clientWebSocketCustomPing() async throws {
         struct TestCustomPing: WebSocketPing {
             func ping(_ socket: WebSocket) async throws {
-                print("CustomPing")
-
                 try await socket.send("CustomPing")
             }
         }
@@ -402,14 +384,11 @@ extension WebSocketIntegrationTests {
             }
 
             defer {
-                Task {
-                    do {
-                        try await Task.sleep(for: .seconds(2))
-                        try await server.stop()
-                        try await group.shutdownGracefully()
-                    } catch {
-                        Issue.record("Unexpected error: \(error)")
-                    }
+                do {
+                    try await server.stop()
+                    try await group.shutdownGracefully()
+                } catch {
+                    Issue.record("Unexpected error: \(error)")
                 }
             }
 
@@ -430,7 +409,7 @@ extension WebSocketIntegrationTests {
 
             #expect(await websocket.state == .connected)
 
-            try await Task.sleep(for: .seconds(11))
+            try await Task.sleep(for: .seconds(9))
             await websocket.disconnect()
         }
     }

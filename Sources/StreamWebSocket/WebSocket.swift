@@ -494,7 +494,7 @@ private extension WebSocket {
                 try? await Task.sleep(for: pingInterval)
 
                 guard let self else { return }
-                
+
                 guard !Task.isCancelled else { return }
                 do {
                     if let pingUpdater = self.pingUpdater {
