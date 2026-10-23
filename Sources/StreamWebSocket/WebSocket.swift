@@ -362,6 +362,7 @@ private extension WebSocket {
         // Server rejected us or ended the session on purpose: don't hammer it.
         if error.isPermanent {
             wantsConnection = false
+            stopPathMonitor()
         }
 
         guard wantsConnection else {
@@ -372,6 +373,18 @@ private extension WebSocket {
     }
 
     func failure(for task: URLSessionWebSocketTask, error: any Error) -> WebSocketError {
+        if let serverFailure = serverFailure(for: task) {
+            return serverFailure
+        }
+
+        if let urlError = error as? URLError {
+            return .urlError(urlError.code)
+        }
+        return .receiveError
+    }
+
+    /// The cause reported by the server (handshake status or close code), if any.
+    func serverFailure(for task: URLSessionWebSocketTask) -> WebSocketError? {
         if let response = task.response as? HTTPURLResponse, response.statusCode != 101 {
             return .handshakeFailed(statusCode: response.statusCode)
         }
@@ -380,24 +393,23 @@ private extension WebSocket {
         case .policyViolation:
             return .policyViolationError
         case .invalid:
-            break
+            return nil
         default:
             return .closedByServer(code: task.closeCode, reason: task.closeReason)
         }
-
-        if let urlError = error as? URLError {
-            return .urlError(urlError.code)
-        }
-        return .receiveError
     }
 }
 
 private extension WebSocketError {
     var isPermanent: Bool {
         switch self {
+        // Request Timeout, Too Early, Too Many Requests: worth retrying with backoff.
+        case .handshakeFailed(statusCode: 408),
+             .handshakeFailed(statusCode: 425),
+             .handshakeFailed(statusCode: 429):
+            false
         case .policyViolationError,
-             .handshakeFailed(statusCode: 400 ..< 500),
-             .closedByServer(code: .normalClosure, reason: _):
+             .handshakeFailed(statusCode: 400 ..< 500):
             true
         default:
             false
@@ -425,7 +437,9 @@ private extension WebSocket {
             logger.debug("Update configuration")
         #endif
 
-        guard wantsConnection else { return }
+        // A permanent failure may be fixed by the new configuration (e.g. refreshed auth headers).
+        let isFailed = if case .failed = state { true } else { false }
+        guard wantsConnection || isFailed else { return }
         disconnect()
         connect()
     }
@@ -508,7 +522,7 @@ private extension WebSocket {
                             #if WebsocketLogging
                                 logger.error("\(error.localizedDescription)")
                             #endif
-                            await handleFailure(task, error: .sendPingError)
+                            await handleFailure(task, error: serverFailure(for: task) ?? .sendPingError)
                             return
                         }
 
@@ -531,7 +545,7 @@ private extension WebSocket {
                         }
                     }
                 } catch {
-                    await self.handleFailure(task, error: .sendPingError)
+                    await self.handleFailure(task, error: self.serverFailure(for: task) ?? .sendPingError)
                     return
                 }
             }

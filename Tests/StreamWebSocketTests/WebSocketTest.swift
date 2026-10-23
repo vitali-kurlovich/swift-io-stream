@@ -682,10 +682,10 @@ extension WebSocketIntegrationTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
-    func serverCloseNormalClosureFails() async throws {
+    func serverCloseNormalClosureReconnects() async throws {
         let state = try await serverClose(with: .normalClosure)
 
-        guard case .failed(.closedByServer(code: .normalClosure, reason: _)) = state else {
+        guard case .reconnecting = state else {
             Issue.record("Unexpected state: \(state)")
             return
         }
