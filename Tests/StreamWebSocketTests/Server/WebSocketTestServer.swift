@@ -64,6 +64,7 @@ extension WebSocketTestServer {
 enum WebSocketTestServerMode: Sendable {
     case `default`
     case failure
+    case policyViolation
 }
 
 actor WebSocketTestServer: Sendable {
@@ -89,10 +90,19 @@ actor WebSocketTestServer: Sendable {
     }
 
     func start() async throws -> Int {
-        let handlers: [any ChannelHandler & Sendable] = [
-            socketHandler,
-            sendQueue,
-        ]
+        let handlers: [any ChannelHandler & Sendable]
+
+        switch mode {
+        case .default, .failure:
+            handlers = [
+                socketHandler,
+                sendQueue,
+            ]
+        case .policyViolation:
+            handlers = [
+                PolicyViolationHandler(),
+            ]
+        }
 
         let upgrader = NIOWebSocketServerUpgrader(
             maxFrameSize: 1 << 14,
@@ -129,7 +139,8 @@ actor WebSocketTestServer: Sendable {
                 switch self.mode {
                 case .failure:
                     return channel.eventLoop.makeFailedFuture(ConnectionRejected())
-                case .default:
+
+                case .default, .policyViolation:
                     return channel.pipeline.configureHTTPServerPipeline(
                         withServerUpgrade: (
                             upgraders: [upgrader],
@@ -149,8 +160,6 @@ actor WebSocketTestServer: Sendable {
 
         serverChannel = try await bootstrap.bind(host: "127.0.0.1", port: 0).get()
 
-        // serverChannel = channel
-
         guard let port = serverChannel?.localAddress?.port else {
             throw TestServerError.missingPort
         }
@@ -165,6 +174,31 @@ actor WebSocketTestServer: Sendable {
 
         try await serverChannel.close().get()
         self.serverChannel = nil
+    }
+
+    /// Starts the close handshake: sends a close frame with `code` and an optional
+    /// reason, then stops sending. The connection fully closes when the client replies.
+    private func close(context: ChannelHandlerContext, code: WebSocketErrorCode, reason: String? = nil) {
+        var data = context.channel.allocator.buffer(capacity: 2)
+        data.write(webSocketErrorCode: code)
+        if let reason {
+            // A close frame payload is at most 125 bytes: 2 for the code + 123 for the reason.
+            data.writeString(String(decoding: reason.utf8.prefix(123), as: UTF8.self))
+        }
+
+        let frame = WebSocketFrame(fin: true, opcode: .connectionClose, data: data)
+
+        context.eventLoop.execute { [sendQueue] in
+            sendQueue.send(
+                frame
+            )
+        }
+
+        // wrapOut
+
+//        context.writeAndFlush(wrapOutboundOut(frame)).whenComplete { _ in
+//            context.close(mode: .output, promise: nil)
+//        }
     }
 }
 
