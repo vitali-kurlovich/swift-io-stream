@@ -217,6 +217,9 @@ private extension WebSocket {
     // MARK: - Connection lifecycle
 
     func open() {
+        if state == .connecting {
+            return
+        }
         teardown(code: .goingAway)
         if attempt == 0 {
             state = .connecting
