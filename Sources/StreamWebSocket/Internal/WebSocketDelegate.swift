@@ -19,24 +19,24 @@ final class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
 
     func urlSession(_: URLSession,
                     webSocketTask: URLSessionWebSocketTask,
-                    didOpenWithProtocol protocolName: String?)
+                    didOpenWithProtocol _: String?)
     {
         guard let webSocket = webSocket else { return }
         Task {
             await webSocket
-                .didOpenConnection(webSocketTask, protocolName: protocolName)
+                .didOpenConnection(webSocketTask)
         }
     }
 
     func urlSession(_: URLSession,
                     webSocketTask: URLSessionWebSocketTask,
                     didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
-                    reason: Data?)
+                    reason _: Data?)
     {
         guard let webSocket = webSocket else { return }
         Task {
             await webSocket
-                .didCloseConnection(webSocketTask, code: closeCode, reason: reason)
+                .didCloseConnection(webSocketTask, code: closeCode)
         }
     }
 

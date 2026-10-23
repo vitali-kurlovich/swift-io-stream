@@ -4,7 +4,7 @@
 
 import Foundation
 
-public enum WebSocketMessage: Sendable {
+public enum WebSocketMessage: Equatable, Sendable {
     case text(String)
     case data(Data)
 }

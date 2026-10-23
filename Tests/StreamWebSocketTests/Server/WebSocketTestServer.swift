@@ -2,6 +2,7 @@
 //  Created by Kurlovich Vitali on 10/21/26.
 //
 
+import Foundation
 import NIOCore
 import NIOHTTP1
 import NIOPosix
@@ -38,6 +39,54 @@ extension WebSocketTestServer {
             )
         }
     }
+
+    func send(data: Data) throws {
+        guard let channel = serverChannel else {
+            throw ChannelError.channelNoExists
+        }
+
+        var buffer = channel.allocator.buffer(capacity: data.count)
+        buffer.writeBytes(data)
+
+        let frame = WebSocketFrame(
+            fin: true,
+            opcode: .binary,
+            data: buffer
+        )
+
+        channel.eventLoop.execute { [sendQueue] in
+            sendQueue.send(
+                frame
+            )
+        }
+    }
+
+    func close(code: WebSocketErrorCode) throws {
+        guard let channel = serverChannel else {
+            throw ChannelError.channelNoExists
+        }
+
+        var buffer = channel.allocator.buffer(capacity: 2)
+        buffer.write(webSocketErrorCode: code)
+
+        let frame = WebSocketFrame(
+            fin: true,
+            opcode: .connectionClose,
+            data: buffer
+        )
+
+        channel.eventLoop.execute { [sendQueue] in
+            sendQueue.send(
+                frame
+            )
+        }
+    }
+}
+
+enum WebSocketTestServerMode: Sendable {
+    case `default`
+    case failure
+    case policyViolation
 }
 
 actor WebSocketTestServer: Sendable {
@@ -47,22 +96,35 @@ actor WebSocketTestServer: Sendable {
     let sendQueue = WebSocketSendQueue()
     let socketHandler: ReadSocketHandler
 
+    let mode: WebSocketTestServerMode
+
     init(
         group: MultiThreadedEventLoopGroup,
+        mode: WebSocketTestServerMode = .default,
         recieveHandler: @escaping @Sendable (WebSocketOpcode, ByteBuffer) -> Void = {
             _,
             _ in
         }
     ) {
         self.group = group
+        self.mode = mode
         socketHandler = ReadSocketHandler(recieveHandler: recieveHandler)
     }
 
     func start() async throws -> Int {
-        let handlers: [any ChannelHandler & Sendable] = [
-            socketHandler,
-            sendQueue,
-        ]
+        let handlers: [any ChannelHandler & Sendable]
+
+        switch mode {
+        case .default, .failure:
+            handlers = [
+                socketHandler,
+                sendQueue,
+            ]
+        case .policyViolation:
+            handlers = [
+                PolicyViolationHandler(),
+            ]
+        }
 
         let upgrader = NIOWebSocketServerUpgrader(
             maxFrameSize: 1 << 14,
@@ -84,6 +146,8 @@ actor WebSocketTestServer: Sendable {
             }
         )
 
+        struct ConnectionRejected: Error {}
+
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(
                 ChannelOptions.backlog,
@@ -94,12 +158,18 @@ actor WebSocketTestServer: Sendable {
                 value: 1
             )
             .childChannelInitializer { channel in
-                channel.pipeline.configureHTTPServerPipeline(
-                    withServerUpgrade: (
-                        upgraders: [upgrader],
-                        completionHandler: { _ in }
+                switch self.mode {
+                case .failure:
+                    return channel.eventLoop.makeFailedFuture(ConnectionRejected())
+
+                case .default, .policyViolation:
+                    return channel.pipeline.configureHTTPServerPipeline(
+                        withServerUpgrade: (
+                            upgraders: [upgrader],
+                            completionHandler: { _ in }
+                        )
                     )
-                )
+                }
 
             }.childChannelOption(
                 ChannelOptions.socketOption(.so_reuseaddr),
@@ -111,8 +181,6 @@ actor WebSocketTestServer: Sendable {
             )
 
         serverChannel = try await bootstrap.bind(host: "127.0.0.1", port: 0).get()
-
-        // serverChannel = channel
 
         guard let port = serverChannel?.localAddress?.port else {
             throw TestServerError.missingPort
@@ -129,6 +197,8 @@ actor WebSocketTestServer: Sendable {
         try await serverChannel.close().get()
         self.serverChannel = nil
     }
+
+
 }
 
 enum TestServerError: Error {

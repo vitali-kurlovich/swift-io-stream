@@ -52,7 +52,7 @@ final class ReadSocketHandler: ChannelInboundHandler, Sendable {
             let close = WebSocketFrame(
                 fin: true,
                 opcode: .connectionClose,
-                data: frame.data
+                data: frame.unmaskedData
             )
 
             context.writeAndFlush(
