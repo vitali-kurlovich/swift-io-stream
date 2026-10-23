@@ -198,30 +198,7 @@ actor WebSocketTestServer: Sendable {
         self.serverChannel = nil
     }
 
-    /// Starts the close handshake: sends a close frame with `code` and an optional
-    /// reason, then stops sending. The connection fully closes when the client replies.
-    private func close(context: ChannelHandlerContext, code: WebSocketErrorCode, reason: String? = nil) {
-        var data = context.channel.allocator.buffer(capacity: 2)
-        data.write(webSocketErrorCode: code)
-        if let reason {
-            // A close frame payload is at most 125 bytes: 2 for the code + 123 for the reason.
-            data.writeString(String(decoding: reason.utf8.prefix(123), as: UTF8.self))
-        }
 
-        let frame = WebSocketFrame(fin: true, opcode: .connectionClose, data: data)
-
-        context.eventLoop.execute { [sendQueue] in
-            sendQueue.send(
-                frame
-            )
-        }
-
-        // wrapOut
-
-//        context.writeAndFlush(wrapOutboundOut(frame)).whenComplete { _ in
-//            context.close(mode: .output, promise: nil)
-//        }
-    }
 }
 
 enum TestServerError: Error {
