@@ -2,6 +2,7 @@
 //  Created by Kurlovich Vitali on 10/21/26.
 //
 
+import Foundation
 import NIOCore
 import NIOHTTP1
 import NIOPosix
@@ -29,6 +30,27 @@ extension WebSocketTestServer {
         let frame = WebSocketFrame(
             fin: true,
             opcode: .text,
+            data: buffer
+        )
+
+        channel.eventLoop.execute { [sendQueue] in
+            sendQueue.send(
+                frame
+            )
+        }
+    }
+
+    func send(data: Data) throws {
+        guard let channel = serverChannel else {
+            throw ChannelError.channelNoExists
+        }
+
+        var buffer = channel.allocator.buffer(capacity: data.count)
+        buffer.writeBytes(data)
+
+        let frame = WebSocketFrame(
+            fin: true,
+            opcode: .binary,
             data: buffer
         )
 

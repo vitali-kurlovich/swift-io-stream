@@ -64,6 +64,57 @@ final class WebSocketIntegrationTests {
     }
 }
 
+/// Configuration
+extension WebSocketIntegrationTests {
+    @Test(.timeLimit(.minutes(1)))
+    func clientWebSocketConfiguration() async throws {
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        let server = WebSocketTestServer(group: group)
+
+        defer {
+            do {
+                try await server.stop()
+                try await group.shutdownGracefully()
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+        }
+
+        let port = try await server.start()
+        let url = socketURL(with: port)
+
+        let websocket = WebSocket(configuration: .init(url: url))
+
+        let task = Task {
+            var states: [WebSocketState] = []
+            for await state in await websocket.states.prefix(6) {
+                states.append(state)
+                print(state)
+            }
+
+            return states
+        }
+
+        await websocket.connect()
+
+        #expect(try await waitForState(websocket) { $0 == .connected } == .connected)
+
+        await websocket
+            .update(configuration: .init(url: url, pingInterval: .seconds(4)))
+
+        let states = await task.value
+
+        #expect(states == [
+            .disconnected,
+            .connecting,
+            .connected,
+            .disconnected,
+            .connecting,
+            .connected,
+        ])
+    }
+}
+
 /// Failure
 extension WebSocketIntegrationTests {
     @Test(.timeLimit(.minutes(1)))
@@ -89,7 +140,6 @@ extension WebSocketIntegrationTests {
             var states: [WebSocketState] = []
             for await state in await websocket.states.prefix(4) {
                 states.append(state)
-                print(state)
             }
 
             return states
@@ -132,7 +182,6 @@ extension WebSocketIntegrationTests {
             var states: [WebSocketState] = []
             for await state in await websocket.states.prefix(4) {
                 states.append(state)
-                print(state)
             }
 
             return states
@@ -181,7 +230,6 @@ extension WebSocketIntegrationTests {
             var states: [WebSocketState] = []
             for await state in await websocket.states.prefix(4) {
                 states.append(state)
-                print(state)
             }
 
             return states
@@ -289,10 +337,10 @@ extension WebSocketIntegrationTests {
     }
 }
 
-/// Messages
+/// Server Send Messages
 extension WebSocketIntegrationTests {
     @Test(.timeLimit(.minutes(1)))
-    func clientWebSocketMessages() async throws {
+    func clientWebSocketServerSendTextMessages() async throws {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         let server = WebSocketTestServer(group: group)
 
@@ -328,15 +376,56 @@ extension WebSocketIntegrationTests {
         try await server.send(text: "Message 2")
         try await server.send(text: "Message 3")
 
-        try await Task.sleep(for: .seconds(5))
+        let messages = await messagesTask.value
+
+        #expect(messages == [WebSocketMessage.text("Message 1"), .text("Message 2"), .text("Message 3")])
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func clientWebSocketServerSendDataMessages() async throws {
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        let server = WebSocketTestServer(group: group)
+
+        defer {
+            do {
+                try await server.stop()
+                try await group.shutdownGracefully()
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+        }
+
+        let port = try await server.start()
+        #expect(port > 0)
+        let url = socketURL(with: port)
+
+        let websocket = WebSocket(configuration: .init(url: url))
+
+        let messagesTask = Task {
+            var messages: [WebSocketMessage] = []
+            for await message in await websocket.messages.prefix(3) {
+                messages.append(message)
+            }
+
+            return messages
+        }
+
+        await websocket.connect()
+
+        #expect(try await waitForState(websocket) { $0 == .connected } == .connected)
+
+        try await server.send(data: Data([1, 2, 3]))
+        try await server.send(data: Data([4, 5, 6]))
+        try await server.send(data: Data([7, 8, 9]))
 
         let messages = await messagesTask.value
 
-        #expect(messages.count == 3)
-
-        await websocket.disconnect()
+        #expect(messages == [WebSocketMessage.data(Data([1, 2, 3])), .data(Data([4, 5, 6])), .data(Data([7, 8, 9]))])
     }
+}
 
+/// Client Send Messages
+extension WebSocketIntegrationTests {
     @Test(.timeLimit(.minutes(1)))
     func clientWebSocketSendTextMessage() async throws {
         try await confirmation(expectedCount: 1) { confirm in

@@ -66,7 +66,9 @@ public actor WebSocket {
 
     public private(set) var state: State = .disconnected {
         didSet {
-            invalidateState()
+            if oldValue != state {
+                invalidateState()
+            }
         }
     }
 
